@@ -451,12 +451,12 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
         dismissDialog();
         if (!TextUtils.isEmpty(result)) {
             try {
-                if (!SdkVersionUtils.checkedAndroid_Q()) {
+                //if (!SdkVersionUtils.checkedAndroid_Q()) {
                     File file = new File(result);
                     MediaStore.Images.Media.insertImage(getContentResolver(), file.getAbsolutePath(), file.getName(), null);
                     new PictureMediaScannerConnection(mContext, file.getAbsolutePath(), () -> {
                     });
-                }
+                //}
                 ToastManage.s(mContext, getString(R.string.picture_save_success) + "\n" + result);
             } catch (Exception e) {
                 e.printStackTrace();
