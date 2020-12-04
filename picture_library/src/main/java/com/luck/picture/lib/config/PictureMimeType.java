@@ -140,6 +140,26 @@ public final class PictureMimeType {
     }
 
     /**
+     * Get image suffix
+     *
+     * @param mineType
+     * @return
+     */
+    public static String getLastImgSuffix(String mineType) {
+        String defaultSuffix = PNG;
+        try {
+            int index = mineType.lastIndexOf("/") + 1;
+            if (index > 0) {
+                return "." + mineType.substring(index);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return defaultSuffix;
+        }
+        return defaultSuffix;
+    }
+
+    /**
      * 是否是网络图片
      *
      * @param path
@@ -153,6 +173,18 @@ public final class PictureMimeType {
             }
         }
         return false;
+    }
+
+    /* is content://
+     *
+     * @param url
+     * @return
+     */
+    public static boolean isContent(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return false;
+        }
+        return url.startsWith("content://");
     }
 
     /**
@@ -364,4 +396,47 @@ public final class PictureMimeType {
     public final static String JPEG = ".JPEG";
 
     public final static String PNG = ".png";
+
+    public final static String CAMERA = "Camera";
+
+    public final static String DCIM = "DCIM/Camera";
+
+
+    /**
+     * Get Image mimeType
+     *
+     * @param path
+     * @return
+     */
+    public static String getImageMimeType(String path) {
+        try {
+            if (!TextUtils.isEmpty(path)) {
+                File file = new File(path);
+                String fileName = file.getName();
+                int beginIndex = fileName.lastIndexOf(".");
+                String temp = beginIndex == -1 ? "jpeg" : fileName.substring(beginIndex + 1);
+                return "image/" + temp;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return MIME_TYPE_IMAGE;
+        }
+        return MIME_TYPE_IMAGE;
+    }
+
+    public final static String MIME_TYPE_IMAGE = "image/jpeg";
+    public final static String MIME_TYPE_JPEG = "image/jpeg";
+    private final static String MIME_TYPE_JPG = "image/jpg";
+
+    /**
+     * Determine if it is JPG.
+     *
+     * @param is image file mimeType
+     */
+    public static boolean isJPG(String mimeType) {
+        if (TextUtils.isEmpty(mimeType)) {
+            return false;
+        }
+        return mimeType.startsWith(MIME_TYPE_JPG);
+    }
 }

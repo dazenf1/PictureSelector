@@ -1,10 +1,13 @@
 package com.luck.picture.lib;
 
 import android.Manifest;
+import android.content.ContentValues;
 import android.graphics.Bitmap;
 import android.graphics.PointF;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.provider.MediaStore;
@@ -38,10 +41,13 @@ import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.permissions.RxPermissions;
 import com.luck.picture.lib.photoview.OnViewTapListener;
 import com.luck.picture.lib.photoview.PhotoView;
+import com.luck.picture.lib.thread.PictureThreadUtils;
+import com.luck.picture.lib.tools.DateUtils;
 import com.luck.picture.lib.tools.PictureFileUtils;
 import com.luck.picture.lib.tools.ScreenUtils;
 import com.luck.picture.lib.tools.SdkVersionUtils;
 import com.luck.picture.lib.tools.ToastManage;
+import com.luck.picture.lib.tools.ValueOf;
 import com.luck.picture.lib.widget.PreviewViewPager;
 import com.luck.picture.lib.widget.longimage.ImageSource;
 import com.luck.picture.lib.widget.longimage.ImageViewState;
@@ -52,12 +58,17 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
+import okio.BufferedSource;
+import okio.Okio;
 
 import static java.security.AccessController.getContext;
 
@@ -81,6 +92,8 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
     private RxPermissions rxPermissions;
     private loadDataThread loadDataThread;
     private Boolean isCanDownload;//是否显示下载按钮
+    private String downloadPath;
+    private String mMimeType;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -152,7 +165,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
             final SubsamplingScaleImageView longImg = (SubsamplingScaleImageView) contentView.findViewById(R.id.longImg);
             //下载图片
             final ImageView downloadImageView = (ImageView) contentView.findViewById(R.id.iv_download);
-            downloadImageView.setVisibility(isCanDownload?View.VISIBLE:View.GONE);
+            downloadImageView.setVisibility(isCanDownload ? View.VISIBLE : View.GONE);
             LocalMedia media = images.get(position);
             if (media != null) {
                 final String pictureType = media.getPictureType();
@@ -256,6 +269,9 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                                     @Override
                                     public void onNext(Boolean aBoolean) {
                                         if (aBoolean) {
+                                            downloadPath = path;
+                                            String currentMimeType = PictureMimeType.isHttp(path) ? PictureMimeType.getImageMimeType(media.getPath()) : "image/jpeg";
+                                            mMimeType = PictureMimeType.isJPG(currentMimeType) ? PictureMimeType.MIME_TYPE_JPEG : currentMimeType;
                                             showDownLoadDialog(path);
                                         } else {
                                             ToastManage.s(mContext, getString(R.string.picture_jurisdiction));
@@ -349,32 +365,42 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
         btn_commit.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                showPleaseDialog();
                 boolean isHttp = PictureMimeType.isHttp(path);
+                showPleaseDialog();
                 if (isHttp) {
-                    loadDataThread = new loadDataThread(path);
-                    loadDataThread.start();
+                    PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<String>() {
+                        @Override
+                        public String doInBackground() {
+                            return showLoadingImage(path);
+                        }
+
+                        @Override
+                        public void onSuccess(String result) {
+                            onSuccessful(result);
+                        }
+                    });
                 } else {
                     // 有可能本地图片
                     try {
-                        String dirPath = PictureFileUtils.createDir(PictureExternalPreviewActivity.this,
-                                System.currentTimeMillis() + ".png", directory_path);
-                        PictureFileUtils.copyFile(path, dirPath);
-//                        ToastManage.s(mContext, getString(R.string.picture_save_success) + "\n" + dirPath);
-//                        dismissDialog();
-                        onSuccessful(path);
-                    } catch (IOException e) {
+                        if (PictureMimeType.isContent(path)) {
+                            savePictureAlbumAndroidQ(PictureMimeType.isContent(path) ? Uri.parse(path) : Uri.fromFile(new File(path)));
+                        } else {
+                            // 把文件插入到系统图库
+                            savePictureAlbum();
+                        }
+                    } catch (Exception e) {
                         ToastManage.s(mContext, getString(R.string.picture_save_error) + "\n" + e.getMessage());
                         dismissDialog();
                         e.printStackTrace();
                     }
                 }
-                dialog.dismiss();
+                if (!isFinishing()) {
+                    dialog.dismiss();
+                }
             }
         });
         dialog.show();
     }
-
 
     // 进度条线程
     public class loadDataThread extends Thread {
@@ -395,52 +421,140 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
         }
     }
 
-    // 下载图片保存至手机
-    public void showLoadingImage(String urlPath) {
-        try {
-            URL u = new URL(urlPath);
-            String path = PictureFileUtils.createDir(PictureExternalPreviewActivity.this,
-                    System.currentTimeMillis() + ".png", directory_path);
-            byte[] buffer = new byte[1024 * 8];
-            int read;
-            int ava = 0;
-            long start = System.currentTimeMillis();
-            BufferedInputStream bin;
-            bin = new BufferedInputStream(u.openStream());
-            BufferedOutputStream bout = new BufferedOutputStream(
-                    new FileOutputStream(path));
-            while ((read = bin.read(buffer)) > -1) {
-                bout.write(buffer, 0, read);
-                ava += read;
-                long speed = ava / (System.currentTimeMillis() - start);
-            }
-            bout.flush();
-            bout.close();
-            Message message = handler.obtainMessage();
-            message.what = 200;
-            message.obj = path;
-            handler.sendMessage(message);
-        } catch (IOException e) {
-            ToastManage.s(mContext, getString(R.string.picture_save_error) + "\n" + e.getMessage());
-            e.printStackTrace();
-        }
+    /**
+     * 针对Q版本创建uri
+     *
+     * @return
+     */
+    private Uri createOutImageUri() {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, DateUtils.getCreateFileName("IMG_"));
+        contentValues.put(MediaStore.Images.Media.DATE_TAKEN, ValueOf.toString(System.currentTimeMillis()));
+        contentValues.put(MediaStore.Images.Media.MIME_TYPE, mMimeType);
+        contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, PictureMimeType.DCIM);
+
+        return getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
     }
 
-
-    private Handler handler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            super.handleMessage(msg);
-            switch (msg.what) {
-                case 200:
-                    String path = (String) msg.obj;
-//                    ToastManage.s(mContext, getString(R.string.picture_save_success) + "\n" + path);
-//                    dismissDialog();
-                    onSuccessful(path);
-                    break;
+    // 下载图片保存至手机
+    public String showLoadingImage(String urlPath) {
+        Uri outImageUri = null;
+        OutputStream outputStream = null;
+        InputStream inputStream = null;
+        BufferedSource inBuffer = null;
+        try {
+            if (SdkVersionUtils.checkedAndroid_Q()) {
+                outImageUri = createOutImageUri();
+            } else {
+                String suffix = PictureMimeType.getLastImgSuffix(mMimeType);
+                String state = Environment.getExternalStorageState();
+                File rootDir =
+                        state.equals(Environment.MEDIA_MOUNTED)
+                                ? Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+                                : mContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+                if (rootDir != null) {
+                    if (!rootDir.exists()) {
+                        rootDir.mkdirs();
+                    }
+                    File folderDir = new File(!state.equals(Environment.MEDIA_MOUNTED)
+                            ? rootDir.getAbsolutePath() : rootDir.getAbsolutePath() + File.separator + PictureMimeType.CAMERA + File.separator);
+                    if (!folderDir.exists() && folderDir.mkdirs()) {
+                    }
+                    String fileName = DateUtils.getCreateFileName("IMG_") + suffix;
+                    File file = new File(folderDir, fileName);
+                    outImageUri = Uri.fromFile(file);
+                }
             }
+            if (outImageUri != null) {
+                outputStream = Objects.requireNonNull(getContentResolver().openOutputStream(outImageUri));
+                URL u = new URL(urlPath);
+                inputStream = u.openStream();
+                inBuffer = Okio.buffer(Okio.source(inputStream));
+                boolean bufferCopy = PictureFileUtils.bufferCopy(inBuffer, outputStream);
+                if (bufferCopy) {
+                    return PictureFileUtils.getPath(this, outImageUri);
+                }
+            }
+        } catch (Exception e) {
+            if (outImageUri != null && SdkVersionUtils.checkedAndroid_Q()) {
+                getContentResolver().delete(outImageUri, null, null);
+            }
+        } finally {
+            PictureFileUtils.close(inputStream);
+            PictureFileUtils.close(outputStream);
+            PictureFileUtils.close(inBuffer);
         }
-    };
+        return null;
+    }
+
+    /**
+     * 保存相片至本地相册
+     *
+     * @throws Exception
+     */
+    private void savePictureAlbum() throws Exception {
+        String suffix = PictureMimeType.getLastImgSuffix(mMimeType);
+        String state = Environment.getExternalStorageState();
+        File rootDir = state.equals(Environment.MEDIA_MOUNTED)
+                ? Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+                : mContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        if (rootDir != null && !rootDir.exists() && rootDir.mkdirs()) {
+        }
+        File folderDir = new File(SdkVersionUtils.checkedAndroid_Q() || !state.equals(Environment.MEDIA_MOUNTED)
+                ? rootDir.getAbsolutePath() : rootDir.getAbsolutePath() + File.separator + PictureMimeType.CAMERA + File.separator);
+        if (folderDir != null && !folderDir.exists() && folderDir.mkdirs()) {
+        }
+        String fileName = DateUtils.getCreateFileName("IMG_") + suffix;
+        File file = new File(folderDir, fileName);
+        PictureFileUtils.copyFile(downloadPath, file.getAbsolutePath());
+        onSuccessful(file.getAbsolutePath());
+    }
+
+    /**
+     * 保存图片到picture 目录，Android Q适配，最简单的做法就是保存到公共目录，不用SAF存储
+     *
+     * @param inputUri
+     */
+    private void savePictureAlbumAndroidQ(Uri inputUri) {
+        ContentValues contentValues = new ContentValues();
+        contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, DateUtils.getCreateFileName("IMG_"));
+        contentValues.put(MediaStore.Images.Media.DATE_TAKEN, ValueOf.toString(System.currentTimeMillis()));
+        contentValues.put(MediaStore.Images.Media.MIME_TYPE, mMimeType);
+        contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, PictureMimeType.DCIM);
+        Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
+        if (uri == null) {
+            ToastManage.s(mContext, getString(R.string.picture_save_error));
+            return;
+        }
+        PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<String>() {
+
+            @Override
+            public String doInBackground() {
+                BufferedSource buffer = null;
+                try {
+                    buffer = Okio.buffer(Okio.source(Objects.requireNonNull(getContentResolver().openInputStream(inputUri))));
+                    OutputStream outputStream = getContentResolver().openOutputStream(uri);
+                    boolean bufferCopy = PictureFileUtils.bufferCopy(buffer, outputStream);
+                    if (bufferCopy) {
+                        return PictureFileUtils.getPath(mContext, uri);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    if (buffer != null && buffer.isOpen()) {
+                        PictureFileUtils.close(buffer);
+                    }
+                }
+                return "";
+            }
+
+            @Override
+            public void onSuccess(String result) {
+                PictureThreadUtils.cancel(PictureThreadUtils.getIoPool());
+                onSuccessful(result);
+            }
+        });
+    }
 
     /**
      * 图片保存成功
@@ -451,12 +565,12 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
         dismissDialog();
         if (!TextUtils.isEmpty(result)) {
             try {
-                //if (!SdkVersionUtils.checkedAndroid_Q()) {
+                if (!SdkVersionUtils.checkedAndroid_Q()) {
                     File file = new File(result);
                     MediaStore.Images.Media.insertImage(getContentResolver(), file.getAbsolutePath(), file.getName(), null);
                     new PictureMediaScannerConnection(mContext, file.getAbsolutePath(), () -> {
                     });
-                //}
+                }
                 ToastManage.s(mContext, getString(R.string.picture_save_success) + "\n" + result);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -477,7 +591,6 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
     protected void onDestroy() {
         super.onDestroy();
         if (loadDataThread != null) {
-            handler.removeCallbacks(loadDataThread);
             loadDataThread = null;
         }
     }

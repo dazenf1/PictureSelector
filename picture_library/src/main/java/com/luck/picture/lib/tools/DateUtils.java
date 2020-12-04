@@ -12,6 +12,7 @@ import java.text.SimpleDateFormat;
 
 public class DateUtils {
     private static SimpleDateFormat msFormat = new SimpleDateFormat("mm:ss");
+    private static SimpleDateFormat sf = new SimpleDateFormat("yyyyMMdd_HHmmssSS");
 
     /**
      * MS turn every minute
@@ -81,5 +82,26 @@ public class DateUtils {
     public static String cdTime(long sTime, long eTime) {
         long diff = eTime - sTime;
         return diff > 1000 ? diff / 1000 + "秒" : diff + "毫秒";
+    }
+
+    /**
+     * 根据时间戳创建文件名
+     *
+     * @param prefix 前缀名
+     * @return
+     */
+    public static String getCreateFileName(String prefix) {
+        long millis = System.currentTimeMillis();
+        return prefix + sf.format(millis);
+    }
+
+    /**
+     * 根据时间戳创建文件名
+     *
+     * @return
+     */
+    public static String getCreateFileName() {
+        long millis = System.currentTimeMillis();
+        return sf.format(millis);
     }
 }

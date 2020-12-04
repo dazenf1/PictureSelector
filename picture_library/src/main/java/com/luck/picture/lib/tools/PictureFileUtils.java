@@ -20,22 +20,29 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.luck.picture.lib.config.PictureConfig;
 
 import java.io.BufferedOutputStream;
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+
+import okio.BufferedSink;
+import okio.BufferedSource;
+import okio.Okio;
 
 /**
  * author：luck
@@ -688,5 +695,87 @@ public class PictureFileUtils {
             cachePath = context.getCacheDir().getPath();
         }
         return cachePath;
+    }
+
+    /**
+     * 拷贝文件
+     *
+     * @param outFile
+     * @return
+     */
+    public static boolean bufferCopy(BufferedSource inBuffer, File outFile) {
+        BufferedSink outBuffer = null;
+        try {
+            outBuffer = Okio.buffer(Okio.sink(outFile));
+            outBuffer.writeAll(inBuffer);
+            outBuffer.flush();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            close(inBuffer);
+            close(outBuffer);
+        }
+        return false;
+    }
+    /**
+     * 拷贝文件
+     *
+     * @param outputStream
+     * @return
+     */
+    public static boolean bufferCopy(BufferedSource inBuffer, OutputStream outputStream) {
+        BufferedSink outBuffer = null;
+        try {
+            outBuffer = Okio.buffer(Okio.sink(outputStream));
+            outBuffer.writeAll(inBuffer);
+            outBuffer.flush();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            close(inBuffer);
+            close(outBuffer);
+        }
+        return false;
+    }
+
+
+    /**
+     * 拷贝文件
+     *
+     * @param inFile
+     * @param outPutStream
+     * @return
+     */
+    public static boolean bufferCopy(File inFile, OutputStream outPutStream) {
+        BufferedSource inBuffer = null;
+        BufferedSink outBuffer = null;
+        try {
+            inBuffer = Okio.buffer(Okio.source(inFile));
+            outBuffer = Okio.buffer(Okio.sink(outPutStream));
+            outBuffer.writeAll(inBuffer);
+            outBuffer.flush();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            close(inBuffer);
+            close(outPutStream);
+            close(outBuffer);
+        }
+        return false;
+    }
+
+    @SuppressWarnings("ConstantConditions")
+    public static void close(@Nullable Closeable c) {
+        // java.lang.IncompatibleClassChangeError: interface not implemented
+        if (c != null && c instanceof Closeable) {
+            try {
+                c.close();
+            } catch (Exception e) {
+                // silence
+            }
+        }
     }
 }
