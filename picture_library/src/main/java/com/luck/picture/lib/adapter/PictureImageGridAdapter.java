@@ -2,6 +2,7 @@ package com.luck.picture.lib.adapter;
 
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
@@ -311,7 +312,7 @@ public class PictureImageGridAdapter extends RecyclerView.Adapter<RecyclerView.V
      * @param contentHolder
      * @param image
      */
-
+    @SuppressLint("StringFormatMatches")
     private void changeCheckboxState(ViewHolder contentHolder, LocalMedia image) {
         boolean isChecked = contentHolder.check.isSelected();
         String pictureType = selectImages.size() > 0 ? selectImages.get(0).getPictureType() : "";
